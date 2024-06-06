@@ -1887,6 +1887,10 @@ def update_client_status(ctx: Context, client: Client, new_status: ClientStatus)
                    for player in ctx.player_names
                    if player[0] == client.team and player[1] != client.slot):
                 ctx.broadcast_text_all(f"Team #{client.team + 1} has completed all of their games! Congratulations!")
+                ctx.server.ws_server.close() #stolen from _cmd_exit
+                if ctx.shutdown_task:
+                    ctx.shutdown_task.cancel()
+                ctx.exit_event.set()
 
         ctx.client_game_state[client.team, client.slot] = new_status
         ctx.on_client_status_change(client.team, client.slot)
