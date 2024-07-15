@@ -9,6 +9,9 @@ import time
 import sys
 from typing import Dict, Optional, List
 from BaseClasses import Region, Location, ItemClassification
+from kivy.core.image import ImageLoader, ImageLoaderBase, ImageData
+import pkgutil
+import io
 
 from BaseClasses import CollectionState, MultiWorld, LocationProgressType
 from worlds.generic.Rules import exclusion_rules, locality_rules
@@ -75,6 +78,10 @@ class TrackerGameContext(CommonContext):
     tags = CommonContext.tags | {"Tracker"}
     command_processor = TrackerCommandProcessor
     tracker_page = None
+    map_page = None
+    map_page_folder = ""
+    map_page_callback = None
+    map_page_coords_func = None
     watcher_task = None
     update_callback: Callable[[list[str]], bool] = None
     region_callback: Callable[[list[str]], bool] = None
@@ -94,6 +101,26 @@ class TrackerGameContext(CommonContext):
         self.multiworld: MultiWorld = None
         self.player_id = None
         self.manual_items = []
+
+    def load_pack(self):
+        PACK_NAME = self.multiworld.worlds[self.player_id].__class__.__module__
+        self.maps = load_json(PACK_NAME, f"/{self.map_page_folder}/maps/maps.json")
+        self.locs = load_json(PACK_NAME, f"/{self.map_page_folder}/locations/locations.json")
+
+    def load_map(self):
+        from kivy.app import App
+        map_id = 0
+        #if self.map_page_callback is not None:
+        #    map_id = self.map_page_callback(self.stored_data)
+        m = self.maps[map_id]
+        PACK_NAME = self.multiworld.worlds[self.player_id].__class__.__module__
+        # m = [m for m in self.maps if m["name"] == map_name]
+        self.ui.source = f"ap:{PACK_NAME}/{self.map_page_folder}/{m['img']}"
+        logger.error("source = " + self.ui.source)
+        self.ui.loc_size = m["location_size"]
+        self.ui.loc_border = m["location_border_thickness"]
+        self.coords = [(map_loc["x"], map_loc["y"]) for location in self.locs for map_loc in location["map_locations"] if map_loc["map"] == m["name"]]
+        self.map_page_coords_func(self.coords)
 
     def clear_page(self):
         if self.tracker_page is not None:
@@ -116,6 +143,8 @@ class TrackerGameContext(CommonContext):
         from kivy.uix.boxlayout import BoxLayout
         from kivy.uix.tabbedpanel import TabbedPanelItem
         from kivy.uix.recycleview import RecycleView
+        from kivy.uix.widget import Widget
+        from kivy.uix.image import AsyncImage
 
         class TrackerLayout(BoxLayout):
             pass
@@ -134,7 +163,32 @@ class TrackerGameContext(CommonContext):
                 if sort:
                     self.data.sort(key=lambda e: e["text"])
 
+        class ApAsyncImage(AsyncImage):
+            def is_uri(self, filename: str) -> bool:
+                if filename.startswith("ap:"):
+                    return True
+                else:
+                    return super().is_uri(filename)
+
+        class ApLocation(Widget):
+            def __init__(self, **kwargs):
+                self.update_status("in_logic")
+                logger.error("location ("+str(kwargs["pos"])+")")
+                super().__init__(**kwargs)
+
+            def update_status(self, status):
+                if status == "out_of_logic":
+                    self.color = (1, 0, 0)
+                elif status == "in_logic":
+                    self.color = (60/255, 179/255, 113/255)
+
+        class VisualTracker(BoxLayout):
+            def load_coords(self,coords):
+                for id,coord in coords.items():
+                    self.ids.location_canvas.add_widget(ApLocation(pos=(coord)))
+
         tracker_page = TabbedPanelItem(text="Tracker Page")
+        map_page = TabbedPanelItem(text="Map Page")
 
         try:
             tracker = TrackerLayout(orientation="horizontal")
@@ -142,6 +196,10 @@ class TrackerGameContext(CommonContext):
             tracker.add_widget(tracker_view)
             self.tracker_page = tracker_view
             tracker_page.content = tracker
+            map = VisualTracker()
+            self.map_page_coords_func = map.load_coords
+            self.map_page = map_page
+            map_page.content = map
             if self.gen_error is not None:
                 for line in self.gen_error.split("\n"):
                     self.log_to_tab(line, False)
@@ -149,6 +207,7 @@ class TrackerGameContext(CommonContext):
             tb = traceback.format_exc()
             print(tb)
         manager.tabs.add_widget(tracker_page)
+        manager.tabs.add_widget(map_page)
 
         from kvui import HintLog
         # hook hint tab
@@ -185,8 +244,13 @@ class TrackerGameContext(CommonContext):
 
     def run_gui(self):
         from kvui import GameManager
+        from kivy.properties import StringProperty, NumericProperty
+        
 
         class TrackerManager(GameManager):
+            source = StringProperty("")
+            loc_size = NumericProperty(20)
+            loc_border = NumericProperty(5)
             logging_pairs = [
                 ("Client", "Archipelago")
             ]
@@ -231,6 +295,14 @@ class TrackerGameContext(CommonContext):
                 return
             self.player_id = player_ids[0]  # should only really ever be one match
             self.game = args["slot_info"][str(args["slot"])][1]
+
+            if callable(getattr(self.multiworld.worlds[self.player_id], "map_page_index", None)):
+                self.map_page_callback = self.multiworld.worlds[self.player_id].map_page_index
+                self.map_page_folder = getattr(self.multiworld.worlds[self.player_id],"map_page_folder","")
+                self.load_pack()
+            else:
+                self.map_page_callback = None
+                self.map_page_folder = ""
 
             if callable(getattr(self.multiworld.worlds[self.player_id], "interpret_slot_data", None)):
                 temp = self.multiworld.worlds[self.player_id].interpret_slot_data(args["slot_data"])
@@ -425,6 +497,12 @@ class TrackerGameContext(CommonContext):
         return multiworld
 
 
+def load_json(pack, path):
+    import pkgutil
+    import json
+    logger.error("Pack = "+pack+" path = "+path )
+    return json.loads(pkgutil.get_data(pack, path).decode())
+
 def updateTracker(ctx: TrackerGameContext):
     if ctx.tracker_failed:
         return #just return and don't bug the player
@@ -499,8 +577,36 @@ def updateTracker(ctx: TrackerGameContext):
         ctx.events_callback(events)
     if len(callback_list) == 0:
         ctx.log_to_tab("All " + str(len(ctx.checked_locations)) + " accessible locations have been checked! Congrats!")
+    if ctx.map_page_callback is not None:
+        ctx.load_map()
     return (all_items, prog_items, events)
 
+class ImageLoaderPkgutil(ImageLoaderBase):
+    def load(self, filename: str) -> typing.List[ImageData]:
+        # take off the "ap:" prefix
+        module, path = filename[3:].split("/", 1)
+        logger.error("Module = " + module + " path = " + path)
+        data = pkgutil.get_data(module, path)
+        return self._bytes_to_data(data)
+
+    def _bytes_to_data(self, data: typing.Union[bytes, bytearray]) -> typing.List[ImageData]:
+        from PIL import Image as PImage
+        p_im = PImage.open(io.BytesIO(data)).convert("RGBA")
+        im_d = ImageData(p_im.size[0], p_im.size[1], p_im.mode.lower(), p_im.tobytes())
+        return [im_d]
+
+
+# grab the default loader method so we can override it but use it as a fallback
+_original_image_loader_load = ImageLoader.load
+
+
+def load_override(filename: str, default_load=_original_image_loader_load, **kwargs):
+    if filename.startswith("ap:"):
+        return ImageLoaderPkgutil(filename)
+    else:
+        return default_load(filename, **kwargs)
+
+ImageLoader.load = load_override
 
 async def game_watcher(ctx: TrackerGameContext) -> None:
     while not ctx.exit_event.is_set():
