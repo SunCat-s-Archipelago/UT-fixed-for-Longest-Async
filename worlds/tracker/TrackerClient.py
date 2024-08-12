@@ -124,7 +124,7 @@ class TrackerGameContext(CommonContext):
 
     def load_map(self,map_id):
         """REMEMBER TO RUN UPDATE_TRACKER!"""
-        if not self.ui:
+        if not self.ui or self.map_page_callback is None:
             return
         from kivy.app import App
         #map_id = 0
