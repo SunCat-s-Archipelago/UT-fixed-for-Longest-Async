@@ -58,6 +58,11 @@ class TrackerCommandProcessor(ClientCommandProcessor):
         for event in sorted(events):
             logger.info(event)
 
+    def _cmd_load_map(self,map_id: str="0"):
+        """Force a poptracker map id to be loaded"""
+        self.ctx.load_map(int(map_id))
+        updateTracker(self.ctx)
+
     @mark_raw
     def _cmd_manually_collect(self, item_name: str = ""):
         """Manually adds an item name to the CollectionState to test"""
@@ -118,6 +123,7 @@ class TrackerGameContext(CommonContext):
         self.load_map(0)
 
     def load_map(self,map_id):
+        """REMEMBER TO RUN UPDATE_TRACKER!"""
         if not self.ui:
             return
         from kivy.app import App
@@ -129,7 +135,6 @@ class TrackerGameContext(CommonContext):
         PACK_NAME = self.multiworld.worlds[self.player_id].__class__.__module__
         # m = [m for m in self.maps if m["name"] == map_name]
         self.ui.source = f"ap:{PACK_NAME}/{self.map_page_folder}/{m['img']}"
-        logger.error("source = " + self.ui.source)
         self.ui.loc_size = m["location_size"]
         self.ui.loc_border = m["location_border_thickness"]
         self.coords = {
@@ -163,7 +168,10 @@ class TrackerGameContext(CommonContext):
         from kivy.uix.tabbedpanel import TabbedPanelItem
         from kivy.uix.recycleview import RecycleView
         from kivy.uix.widget import Widget
-        from kivy.uix.image import AsyncImage
+        try:
+            from kvui import ApAsyncImage #one of these needs to be loaded
+        except ImportError:
+            from .TrackerKivy import ApAsyncImage #use local until ap#3629 gets merged/released
 
         class TrackerLayout(BoxLayout):
             pass
@@ -182,13 +190,6 @@ class TrackerGameContext(CommonContext):
                 if sort:
                     self.data.sort(key=lambda e: e["text"])
 
-        class ApAsyncImage(AsyncImage):
-            def is_uri(self, filename: str) -> bool:
-                if filename.startswith("ap:"):
-                    return True
-                else:
-                    return super().is_uri(filename)
-
         class ApLocation(Widget):
             from kivy.properties import DictProperty,ColorProperty
             locationDict = DictProperty()
@@ -205,7 +206,6 @@ class TrackerGameContext(CommonContext):
                         self.locationDict[location] = status
             @staticmethod
             def update_color(self,locationDict):
-                logger.error(str(locationDict))
                 if any(status == "in_logic" for status in locationDict.values()) and any(status == "out_of_logic" for status in locationDict.values()):
                     self.color = "#FF9F20"
                 elif any(status == "in_logic" for status in locationDict.values()):
@@ -217,6 +217,7 @@ class TrackerGameContext(CommonContext):
 
         class VisualTracker(BoxLayout):
             def load_coords(self,coords):
+                self.ids.location_canvas.clear_widgets()
                 returnDict = defaultdict(list)
                 for coord,sections in coords.items():
                     #https://discord.com/channels/731205301247803413/1170094879142051912/1272327822630977727
@@ -286,7 +287,7 @@ class TrackerGameContext(CommonContext):
         from kivy.properties import StringProperty, NumericProperty
         try:
             from kvui import ImageLoader #one of these needs to be loaded
-        except ModuleNotFoundError:
+        except ImportError:
             from .TrackerKivy import ImageLoader #use local until ap#3629 gets merged/released
         
 

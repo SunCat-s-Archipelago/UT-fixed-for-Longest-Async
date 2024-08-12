@@ -1,4 +1,5 @@
 from kivy.core.image import ImageLoader, ImageLoaderBase, ImageData
+from kivy.uix.image import AsyncImage
 from typing import List, Union
 import pkgutil
 import io
@@ -16,7 +17,13 @@ class ImageLoaderPkgutil(ImageLoaderBase):
         p_im = PImage.open(io.BytesIO(data)).convert("RGBA")
         im_d = ImageData(p_im.size[0], p_im.size[1], p_im.mode.lower(), p_im.tobytes())
         return [im_d]
-
+    
+class ApAsyncImage(AsyncImage):
+    def is_uri(self, filename: str) -> bool:
+        if filename.startswith("ap:"):
+            return True
+        else:
+            return super().is_uri(filename)
 
 # grab the default loader method so we can override it but use it as a fallback
 _original_image_loader_load = ImageLoader.load
