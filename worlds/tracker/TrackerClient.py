@@ -20,7 +20,7 @@ from settings import get_settings
 from Utils import __version__, output_path
 from worlds import AutoWorld
 from worlds.tracker import TrackerWorld
-from collections import Counter
+from collections import Counter,defaultdict
 from MultiServer import mark_raw
 
 from Generate import main as GMain, mystery_argparse
@@ -40,6 +40,7 @@ class TrackerCommandProcessor(ClientCommandProcessor):
         """Print the list of current items in the inventory"""
         logger.info("Current Inventory:")
         all_items, prog_items, events = updateTracker(self.ctx)
+        self.ctx.load_map(1)
         for item, count in sorted(all_items.items()):
             logger.info(str(count) + "x: " + item)
 
@@ -80,6 +81,9 @@ class TrackerGameContext(CommonContext):
     tracker_page = None
     map_page = None
     map_page_folder = ""
+    map_page_maps = ""
+    map_page_locations = ""
+    coord_dict = {}
     map_page_callback = None
     map_page_coords_func = None
     watcher_task = None
@@ -104,12 +108,13 @@ class TrackerGameContext(CommonContext):
 
     def load_pack(self):
         PACK_NAME = self.multiworld.worlds[self.player_id].__class__.__module__
-        self.maps = load_json(PACK_NAME, f"/{self.map_page_folder}/maps/maps.json")
-        self.locs = load_json(PACK_NAME, f"/{self.map_page_folder}/locations/locations.json")
+        self.maps = load_json(PACK_NAME, f"/{self.map_page_folder}/{self.map_page_maps}")
+        self.locs = load_json(PACK_NAME, f"/{self.map_page_folder}/{self.map_page_locations}")
+        self.load_map(0)
 
-    def load_map(self):
+    def load_map(self,map_id):
         from kivy.app import App
-        map_id = 0
+        #map_id = 0
         #if self.map_page_callback is not None:
         #    map_id = self.map_page_callback(self.stored_data)
         m = self.maps[map_id]
@@ -119,8 +124,14 @@ class TrackerGameContext(CommonContext):
         logger.error("source = " + self.ui.source)
         self.ui.loc_size = m["location_size"]
         self.ui.loc_border = m["location_border_thickness"]
-        self.coords = [(map_loc["x"], map_loc["y"]) for location in self.locs for map_loc in location["map_locations"] if map_loc["map"] == m["name"]]
-        self.map_page_coords_func(self.coords)
+        self.coords = {
+            (map_loc["x"], map_loc["y"]) : 
+                [ section["name"] for section in location["sections"] ]
+            for location in self.locs 
+            for map_loc in location["map_locations"] 
+            if map_loc["map"] == m["name"]
+        }
+        self.coord_dict = self.map_page_coords_func(self.coords)
 
     def clear_page(self):
         if self.tracker_page is not None:
@@ -171,21 +182,49 @@ class TrackerGameContext(CommonContext):
                     return super().is_uri(filename)
 
         class ApLocation(Widget):
-            def __init__(self, **kwargs):
-                self.update_status("in_logic")
-                logger.error("location ("+str(kwargs["pos"])+")")
+            from kivy.properties import DictProperty,ReferenceListProperty,NumericProperty
+            locationDict = DictProperty()
+            #color = ReferenceListProperty(NumericProperty(1),NumericProperty(1),NumericProperty(1) )
+            r = NumericProperty(1)
+            g = NumericProperty(1)
+            b = NumericProperty(1)
+            def __init__(self, sections,**kwargs):
+                for location_name in sections:
+                    self.locationDict[location_name]="none"
+                self.bind(locationDict=self.update_color)
                 super().__init__(**kwargs)
 
-            def update_status(self, status):
-                if status == "out_of_logic":
-                    self.color = (1, 0, 0)
-                elif status == "in_logic":
-                    self.color = (60/255, 179/255, 113/255)
+            def update_status(self, location, status):
+                if location in self.locationDict:
+                    if self.locationDict[location] != status:
+                        self.locationDict[location] = status
+            @staticmethod
+            def update_color(self,locationDict):
+                logger.error(str(locationDict))
+                if any(status == "in_logic" for status in locationDict.values()):
+                    self.r = 60/255
+                    self.g = 179/255
+                    self.b = 113/255
+                elif any(status == "out_of_logic" for status in locationDict.values()):
+                    self.r = 1
+                    self.g = 0
+                    self.b = 0
+                else:
+                    self.r = 0.3
+                    self.g = 0.3
+                    self.b = 0.3
+                logger.error("["+str(self.r)+","+str(self.g)+","+str(self.b)+"]")
 
         class VisualTracker(BoxLayout):
             def load_coords(self,coords):
-                for id,coord in coords.items():
-                    self.ids.location_canvas.add_widget(ApLocation(pos=(coord)))
+                returnDict = defaultdict(list)
+                for coord,sections in coords.items():
+                    #https://discord.com/channels/731205301247803413/1170094879142051912/1272327822630977727
+                    temp_loc = ApLocation(sections,pos=(coord))
+                    self.ids.location_canvas.add_widget(temp_loc)
+                    for location_name in sections:
+                        returnDict[location_name].append(temp_loc)
+                return returnDict
 
         tracker_page = TabbedPanelItem(text="Tracker Page")
         map_page = TabbedPanelItem(text="Map Page")
@@ -299,6 +338,8 @@ class TrackerGameContext(CommonContext):
             if callable(getattr(self.multiworld.worlds[self.player_id], "map_page_index", None)):
                 self.map_page_callback = self.multiworld.worlds[self.player_id].map_page_index
                 self.map_page_folder = getattr(self.multiworld.worlds[self.player_id],"map_page_folder","")
+                self.map_page_maps = getattr(self.multiworld.worlds[self.player_id],"map_page_maps","")
+                self.map_page_locations = getattr(self.multiworld.worlds[self.player_id],"map_page_locations","")
                 self.load_pack()
             else:
                 self.map_page_callback = None
@@ -578,7 +619,19 @@ def updateTracker(ctx: TrackerGameContext):
     if len(callback_list) == 0:
         ctx.log_to_tab("All " + str(len(ctx.checked_locations)) + " accessible locations have been checked! Congrats!")
     if ctx.map_page_callback is not None:
-        ctx.load_map()
+        #ctx.load_map()
+        location_id_to_name=AutoWorld.AutoWorldRegister.world_types[ctx.game].location_id_to_name
+        for location in ctx.server_locations:
+            loc_name = location_id_to_name[location]
+            relevent_coords = ctx.coord_dict[loc_name]
+            status = "out_of_logic"
+            if location in ctx.checked_locations:
+                status = "completed"
+            elif location in ctx.locations_available:
+                status = "in_logic"
+            for coord in relevent_coords:
+                coord.update_status(loc_name,status)
+
     return (all_items, prog_items, events)
 
 class ImageLoaderPkgutil(ImageLoaderBase):
