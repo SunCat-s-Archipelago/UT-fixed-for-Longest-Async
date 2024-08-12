@@ -9,9 +9,7 @@ import time
 import sys
 from typing import Dict, Optional, List
 from BaseClasses import Region, Location, ItemClassification
-from kivy.core.image import ImageLoader, ImageLoaderBase, ImageData
-import pkgutil
-import io
+
 
 from BaseClasses import CollectionState, MultiWorld, LocationProgressType
 from worlds.generic.Rules import exclusion_rules, locality_rules
@@ -40,7 +38,6 @@ class TrackerCommandProcessor(ClientCommandProcessor):
         """Print the list of current items in the inventory"""
         logger.info("Current Inventory:")
         all_items, prog_items, events = updateTracker(self.ctx)
-        self.ctx.load_map(1)
         for item, count in sorted(all_items.items()):
             logger.info(str(count) + "x: " + item)
 
@@ -113,11 +110,14 @@ class TrackerGameContext(CommonContext):
         self.load_map(0)
 
     def load_map(self,map_id):
+        if not self.ui:
+            return
         from kivy.app import App
         #map_id = 0
         #if self.map_page_callback is not None:
         #    map_id = self.map_page_callback(self.stored_data)
         m = self.maps[map_id]
+        location_name_to_id=AutoWorld.AutoWorldRegister.world_types[self.game].location_name_to_id
         PACK_NAME = self.multiworld.worlds[self.player_id].__class__.__module__
         # m = [m for m in self.maps if m["name"] == map_name]
         self.ui.source = f"ap:{PACK_NAME}/{self.map_page_folder}/{m['img']}"
@@ -126,10 +126,10 @@ class TrackerGameContext(CommonContext):
         self.ui.loc_border = m["location_border_thickness"]
         self.coords = {
             (map_loc["x"], map_loc["y"]) : 
-                [ section["name"] for section in location["sections"] ]
+                [ section["name"] for section in location["sections"] if location_name_to_id[section["name"]] in self.server_locations ]
             for location in self.locs 
             for map_loc in location["map_locations"] 
-            if map_loc["map"] == m["name"]
+            if map_loc["map"] == m["name"] and any(location_name_to_id[section["name"]] in self.server_locations for section in location["sections"])
         }
         self.coord_dict = self.map_page_coords_func(self.coords)
 
@@ -182,12 +182,9 @@ class TrackerGameContext(CommonContext):
                     return super().is_uri(filename)
 
         class ApLocation(Widget):
-            from kivy.properties import DictProperty,ReferenceListProperty,NumericProperty
+            from kivy.properties import DictProperty,ColorProperty
             locationDict = DictProperty()
-            #color = ReferenceListProperty(NumericProperty(1),NumericProperty(1),NumericProperty(1) )
-            r = NumericProperty(1)
-            g = NumericProperty(1)
-            b = NumericProperty(1)
+            color = ColorProperty("#DD00FF")
             def __init__(self, sections,**kwargs):
                 for location_name in sections:
                     self.locationDict[location_name]="none"
@@ -201,19 +198,14 @@ class TrackerGameContext(CommonContext):
             @staticmethod
             def update_color(self,locationDict):
                 logger.error(str(locationDict))
-                if any(status == "in_logic" for status in locationDict.values()):
-                    self.r = 60/255
-                    self.g = 179/255
-                    self.b = 113/255
+                if any(status == "in_logic" for status in locationDict.values()) and any(status == "out_of_logic" for status in locationDict.values()):
+                    self.color = "#FF9F20"
+                elif any(status == "in_logic" for status in locationDict.values()):
+                    self.color = "#20FF20"
                 elif any(status == "out_of_logic" for status in locationDict.values()):
-                    self.r = 1
-                    self.g = 0
-                    self.b = 0
+                    self.color = "#CF1010"
                 else:
-                    self.r = 0.3
-                    self.g = 0.3
-                    self.b = 0.3
-                logger.error("["+str(self.r)+","+str(self.g)+","+str(self.b)+"]")
+                    self.color = "#3F3F3F"
 
         class VisualTracker(BoxLayout):
             def load_coords(self,coords):
@@ -284,6 +276,10 @@ class TrackerGameContext(CommonContext):
     def run_gui(self):
         from kvui import GameManager
         from kivy.properties import StringProperty, NumericProperty
+        try:
+            from kvui import ImageLoader #one of these needs to be loaded
+        except ModuleNotFoundError:
+            from .TrackerKivy import ImageLoader #use local until ap#3629 gets merged/released
         
 
         class TrackerManager(GameManager):
@@ -634,32 +630,6 @@ def updateTracker(ctx: TrackerGameContext):
 
     return (all_items, prog_items, events)
 
-class ImageLoaderPkgutil(ImageLoaderBase):
-    def load(self, filename: str) -> typing.List[ImageData]:
-        # take off the "ap:" prefix
-        module, path = filename[3:].split("/", 1)
-        logger.error("Module = " + module + " path = " + path)
-        data = pkgutil.get_data(module, path)
-        return self._bytes_to_data(data)
-
-    def _bytes_to_data(self, data: typing.Union[bytes, bytearray]) -> typing.List[ImageData]:
-        from PIL import Image as PImage
-        p_im = PImage.open(io.BytesIO(data)).convert("RGBA")
-        im_d = ImageData(p_im.size[0], p_im.size[1], p_im.mode.lower(), p_im.tobytes())
-        return [im_d]
-
-
-# grab the default loader method so we can override it but use it as a fallback
-_original_image_loader_load = ImageLoader.load
-
-
-def load_override(filename: str, default_load=_original_image_loader_load, **kwargs):
-    if filename.startswith("ap:"):
-        return ImageLoaderPkgutil(filename)
-    else:
-        return default_load(filename, **kwargs)
-
-ImageLoader.load = load_override
 
 async def game_watcher(ctx: TrackerGameContext) -> None:
     while not ctx.exit_event.is_set():

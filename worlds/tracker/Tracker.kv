@@ -62,7 +62,7 @@
             pos: self.x - app.loc_border-self.width/2, self.y - app.loc_border-self.height/2
             size: self.width + (app.loc_border * 2), self.height + (app.loc_border * 2)
         Color:
-            rgb: self.r,self.g,self.b #set by ApLocation.update_color()
+            rgb: self.color #set by ApLocation.update_color()
         Rectangle:
             pos: self.x-self.width/2, self.y-self.height/2
             size: self.size
