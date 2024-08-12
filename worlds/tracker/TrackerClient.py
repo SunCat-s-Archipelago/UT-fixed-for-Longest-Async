@@ -137,12 +137,20 @@ class TrackerGameContext(CommonContext):
         self.ui.source = f"ap:{PACK_NAME}/{self.map_page_folder}/{m['img']}"
         self.ui.loc_size = m["location_size"]
         self.ui.loc_border = m["location_border_thickness"]
+        temp_locs = [location for location in self.locs]
+        map_locs = []
+        while temp_locs:
+            temp_loc = temp_locs.pop()
+            if "map_locations" in temp_loc:
+                map_locs.append(temp_loc)
+            elif "children" in temp_loc:
+                temp_locs.extend(temp_loc["children"])
         self.coords = {
             (map_loc["x"], map_loc["y"]) : 
-                [ section["name"] for section in location["sections"] if location_name_to_id[section["name"]] in self.server_locations ]
-            for location in self.locs 
+                [ section["name"] for section in location["sections"] if section["name"] in location_name_to_id and location_name_to_id[section["name"]] in self.server_locations ]
+            for location in map_locs 
             for map_loc in location["map_locations"] 
-            if map_loc["map"] == m["name"] and any(location_name_to_id[section["name"]] in self.server_locations for section in location["sections"])
+            if map_loc["map"] == m["name"] and any(section["name"] in location_name_to_id and location_name_to_id[section["name"]] in self.server_locations for section in location["sections"])
         }
         self.coord_dict = self.map_page_coords_func(self.coords)
 
