@@ -545,7 +545,6 @@ class TrackerGameContext(CommonContext):
 def load_json(pack, path):
     import pkgutil
     import json
-    logger.error("Pack = "+pack+" path = "+path )
     return json.loads(pkgutil.get_data(pack, path).decode())
 
 def updateTracker(ctx: TrackerGameContext):
@@ -623,7 +622,7 @@ def updateTracker(ctx: TrackerGameContext):
         ctx.events_callback(events)
     if len(callback_list) == 0:
         ctx.log_to_tab("All " + str(len(ctx.checked_locations)) + " accessible locations have been checked! Congrats!")
-    if ctx.map_page_callback is not None:
+    if ctx.map_page_callback is not None and ctx.ui is not None:
         #ctx.load_map()
         location_id_to_name=AutoWorld.AutoWorldRegister.world_types[ctx.game].location_id_to_name
         for location in ctx.server_locations:
@@ -683,3 +682,6 @@ def launch():
             args.password = urllib.parse.unquote(url.password)
 
     asyncio.run(main(args))
+
+if __name__ == "__main__":
+    launch()
