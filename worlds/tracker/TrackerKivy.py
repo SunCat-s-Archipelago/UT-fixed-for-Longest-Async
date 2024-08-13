@@ -10,13 +10,12 @@ class ImageLoaderPkgutil(ImageLoaderBase):
         # take off the "ap:" prefix
         module, path = filename[3:].split("/", 1)
         data = pkgutil.get_data(module, path)
+        print(filename)
         return self._bytes_to_data(data)
 
     def _bytes_to_data(self, data: Union[bytes, bytearray]) -> List[ImageData]:
-        from PIL import Image as PImage
-        p_im = PImage.open(io.BytesIO(data)).convert("RGBA")
-        im_d = ImageData(p_im.size[0], p_im.size[1], p_im.mode.lower(), p_im.tobytes())
-        return [im_d]
+        loader=next(loader for loader in ImageLoader.loaders if loader.can_load_memory())
+        return loader.load(loader, io.BytesIO(data))
     
 class ApAsyncImage(AsyncImage):
     def is_uri(self, filename: str) -> bool:

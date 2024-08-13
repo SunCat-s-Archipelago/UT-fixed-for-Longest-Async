@@ -135,8 +135,8 @@ class TrackerGameContext(CommonContext):
         PACK_NAME = self.multiworld.worlds[self.player_id].__class__.__module__
         # m = [m for m in self.maps if m["name"] == map_name]
         self.ui.source = f"ap:{PACK_NAME}/{self.map_page_folder}/{m['img']}"
-        self.ui.loc_size = m["location_size"]
-        self.ui.loc_border = m["location_border_thickness"]
+        self.ui.loc_size = m["location_size"] if "location_size" in m else 65 #default location size per poptracker/src/core/map.h
+        self.ui.loc_border = m["location_border_thickness"] if "location_border_thickness" in m else 8 #default location size per poptracker/src/core/map.h
         temp_locs = [location for location in self.locs]
         map_locs = []
         while temp_locs:
@@ -147,10 +147,10 @@ class TrackerGameContext(CommonContext):
                 temp_locs.extend(temp_loc["children"])
         self.coords = {
             (map_loc["x"], map_loc["y"]) : 
-                [ section["name"] for section in location["sections"] if section["name"] in location_name_to_id and location_name_to_id[section["name"]] in self.server_locations ]
+                [ section["name"] for section in location["sections"] if "name" in section and section["name"] in location_name_to_id and location_name_to_id[section["name"]] in self.server_locations ]
             for location in map_locs 
             for map_loc in location["map_locations"] 
-            if map_loc["map"] == m["name"] and any(section["name"] in location_name_to_id and location_name_to_id[section["name"]] in self.server_locations for section in location["sections"])
+            if map_loc["map"] == m["name"] and any("name" in section and section["name"] in location_name_to_id and location_name_to_id[section["name"]] in self.server_locations for section in location["sections"])
         }
         self.coord_dict = self.map_page_coords_func(self.coords)
 
@@ -188,7 +188,7 @@ class TrackerGameContext(CommonContext):
             def __init__(self, **kwargs):
                 super().__init__(**kwargs)
                 self.data = []
-                self.data.append({"text": "Tracker BETA v0.1.10.0 Initializing"})
+                self.data.append({"text": "Tracker BETA v0.1.10.1 Initializing"})
 
             def resetData(self):
                 self.data.clear()
@@ -554,7 +554,7 @@ class TrackerGameContext(CommonContext):
 def load_json(pack, path):
     import pkgutil
     import json
-    return json.loads(pkgutil.get_data(pack, path).decode())
+    return json.loads(pkgutil.get_data(pack, path).decode('utf-8-sig'))
 
 def updateTracker(ctx: TrackerGameContext):
     if ctx.tracker_failed:
