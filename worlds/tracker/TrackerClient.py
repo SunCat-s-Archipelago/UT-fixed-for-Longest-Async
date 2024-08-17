@@ -7,7 +7,7 @@ from CommonClient import CommonContext, gui_enabled, get_base_parser, server_loo
 import os
 import time
 import sys
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, List
 from BaseClasses import ItemClassification
 
 
