@@ -199,6 +199,7 @@ class TrackerGameContext(CommonContext):
         from kivy.uix.tabbedpanel import TabbedPanelItem
         from kivy.uix.recycleview import RecycleView
         from kivy.uix.widget import Widget
+        from kivy.properties import StringProperty, NumericProperty, BooleanProperty
         try:
             from kvui import ApAsyncImage #one of these needs to be loaded
         except ImportError:
@@ -278,6 +279,19 @@ class TrackerGameContext(CommonContext):
             tb = traceback.format_exc()
             print(tb)
         manager.tabs.add_widget(tracker_page)
+        @staticmethod
+        def set_map_tab(self,value,*args,map_page=map_page):
+            if value:
+                self.add_widget(map_page)
+                self.tab_width = self.tab_width * (len(self.tab_list)-1)/len(self.tab_list)
+                #for some forsaken reason, the tab panel doesn't auto adjust tab width by itself
+                #it is happy to let the header have a scroll bar until the window forces it to resize
+            else:
+                self.remove_widget(map_page)
+                self.tab_width = self.tab_width * (len(self.tab_list)+1)/len(self.tab_list)
+
+        manager.tabs.apply_property(show_map=BooleanProperty(False))
+        manager.tabs.fbind("show_map",set_map_tab)
 
         from kvui import HintLog
         # hook hint tab
@@ -314,7 +328,7 @@ class TrackerGameContext(CommonContext):
 
     def run_gui(self):
         from kvui import GameManager
-        from kivy.properties import StringProperty, NumericProperty
+        from kivy.properties import StringProperty, NumericProperty, BooleanProperty
         try:
             from kvui import ImageLoader #one of these needs to be loaded
         except ImportError:
@@ -325,6 +339,7 @@ class TrackerGameContext(CommonContext):
             source = StringProperty("")
             loc_size = NumericProperty(20)
             loc_border = NumericProperty(5)
+            enable_map = BooleanProperty(False)
             logging_pairs = [
                 ("Client", "Archipelago")
             ]
@@ -363,19 +378,17 @@ class TrackerGameContext(CommonContext):
             if self.multiworld is None:
                 self.log_to_tab("Internal world was not able to be generated, check your yamls and relaunch", False)
                 return
-            player_ids = [i for i, n in self.multiworld.player_name.items() if n == self.username]
+            player_ids = [i for i, n in self.multiworld.player_name.items() if n == self.player_names[self.slot]]
             if len(player_ids) < 1:
                 self.log_to_tab("Player's Yaml not in tracker's list", False)
                 return
             self.player_id = player_ids[0]  # should only really ever be one match
             self.game = args["slot_info"][str(args["slot"])][1]
 
-            if getattr(self.multiworld.worlds[self.player_id], "tracker_world", None):
+            if self.ui is not None and getattr(self.multiworld.worlds[self.player_id], "tracker_world", None):
                 self.tracker_world = self.multiworld.worlds[self.player_id].tracker_world
                 self.load_pack()
-                logger.error(self.ui.tabs._tab_strip.cols)
-                self.ui.tabs.add_widget(self.map_page)
-                logger.error(self.ui.tabs._tab_strip.cols)
+                self.ui.tabs.show_map = True
             else:
                 self.tracker_world = None
 
@@ -394,7 +407,7 @@ class TrackerGameContext(CommonContext):
         if "Tracker" in self.tags:
             self.game = ""
             self.re_gen_passthrough = None
-            self.ui.tabs.remove_widget(self.map_page)
+            self.ui.tabs.show_map = False
             self.tracker_world = None
         await super().disconnect(allow_autoreconnect)
 
