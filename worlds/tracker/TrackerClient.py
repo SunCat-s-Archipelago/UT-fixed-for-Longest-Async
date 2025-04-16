@@ -530,7 +530,7 @@ async def main(args):
 def launch():
     parser = get_base_parser(description="Gameless Archipelago Client, for text interfacing.")
     parser.add_argument('--name', default=None, help="Slot Name to connect as.")
-    parser.add_argument("url", help="Archipelago connection url")
+    parser.add_argument("url", nargs='?', help="Archipelago connection url")
     args = sys.argv[1:]
     if "Universal Tracker" in args:
         args.remove("Universal Tracker")
