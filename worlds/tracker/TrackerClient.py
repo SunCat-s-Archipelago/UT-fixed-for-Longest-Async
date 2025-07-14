@@ -14,7 +14,7 @@ from BaseClasses import CollectionState, MultiWorld, LocationProgressType
 from worlds.generic.Rules import exclusion_rules, locality_rules
 from Options import StartInventoryPool
 from settings import get_settings
-from Utils import __version__, output_path
+from Utils import __version__, output_path, get_unique_identifier
 from worlds import AutoWorld
 from worlds.tracker import TrackerWorld
 from collections import Counter
@@ -211,6 +211,23 @@ class TrackerGameContext(CommonContext):
 
         data = pkgutil.get_data(TrackerWorld.__module__, "Tracker.kv").decode()
         Builder.load_string(data)
+
+    async def send_connect(self, **kwargs: typing.Any) -> None:
+        """ send `Connect` packet to log in to server """
+        payload = {
+            'cmd': 'Connect',
+            'password': self.password, 'name': self.auth, 'version': {
+					'major': 0,
+					'minor': 5,
+					'build': 0,
+					'class': "Version"
+				},
+            'tags': self.tags, 'items_handling': self.items_handling,
+            'uuid': get_unique_identifier(), 'game': self.game, "slot_data": self.want_slot_data,
+        }
+        if kwargs:
+            payload.update(kwargs)
+        await self.send_msgs([payload])
 
     async def server_auth(self, password_requested: bool = False):
         if password_requested and not self.password:
